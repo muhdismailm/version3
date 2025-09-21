@@ -55,11 +55,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="flex items-center space-x-2 text-white">
-                <Users className="w-5 h-5 text-blue-300" />
-                <span className="text-2xl md:text-3xl font-bold">10M+</span>
-                <span className="text-blue-100 ml-2">learners empowered through innovative education.</span>
-              </div>
+ 
 
               <div className="flex flex-col sm:flex-row gap-4">
                 <button 
@@ -176,25 +172,28 @@ function App() {
           <div className="grid md:grid-cols-3 gap-8">
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 hover:bg-white/15 transition-all duration-300">
               <Award className="w-12 h-12 text-blue-300 mb-6" />
-              <h3 className="text-xl font-semibold text-white mb-4">Adaptive Learning</h3>
+              <h3 className="text-xl font-semibold text-white mb-4">Seamless Audio Transcription</h3>
               <p className="text-blue-100 leading-relaxed">
-                Personalized learning paths that adapt to each student's pace and learning style for optimal educational outcomes.
+                Automatically convert lectures and video content into accurate text transcripts, 
+      forming the foundation for accessible learning.
               </p>
             </div>
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 hover:bg-white/15 transition-all duration-300">
               <Zap className="w-12 h-12 text-blue-300 mb-6" />
-              <h3 className="text-xl font-semibold text-white mb-4">Real-time Insights</h3>
+              <h3 className="text-xl font-semibold text-white mb-4">ISL Gloss Translation</h3>
               <p className="text-blue-100 leading-relaxed">
-                Comprehensive analytics and reporting tools that provide instant feedback on student progress and engagement.
+                 Transform transcripts into Indian Sign Language gloss, ensuring clear and accurate 
+      representation of educational content.
               </p>
             </div>
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 hover:bg-white/15 transition-all duration-300">
               <Users className="w-12 h-12 text-blue-300 mb-6" />
-              <h3 className="text-xl font-semibold text-white mb-4">Global Community</h3>
+              <h3 className="text-xl font-semibold text-white mb-4">3D Avatar Visualization</h3>
               <p className="text-blue-100 leading-relaxed">
-                Connect with educators and learners worldwide through our collaborative platform and shared resources.
+                Render ISL gestures through an expressive 3D avatar, 
+      helping hearing- and speech-impaired learners engage with complex subjects visually.
               </p>
             </div>
           </div>
