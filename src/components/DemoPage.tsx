@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Home,
   Upload,
@@ -16,6 +16,7 @@ declare global {
 
 interface DemoPageProps {
   onBack: () => void;
+  backendUrl: string;
 }
 
 const SpeechRecognition =
@@ -25,27 +26,17 @@ export default function DemoPage({ onBack }: DemoPageProps) {
   const [message, setMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progressStep, setProgressStep] = useState(0);
-  const [currentSign, setCurrentSign] = useState('System Ready.');
-  const [avatarVideo, setAvatarVideo] = useState<string | null>(null);
 
-  /* ---------------- PIPELINE SIMULATION ---------------- */
-  const simulatePipeline = async () => {
-    const steps = 4;
-    for (let i = 1; i <= steps; i++) {
-      setProgressStep(i);
-      await new Promise((resolve) => setTimeout(resolve, 900));
-    }
-  };
+  const [transcript, setTranscript] = useState('');
+  const [gloss, setGloss] = useState<string[]>([]);
 
   /* ---------------- TEXT TO ISL ---------------- */
   const handleSendMessage = async () => {
     if (!message.trim()) return;
 
     setIsProcessing(true);
-    setProgressStep(0);
-    setAvatarVideo(null);
-    setCurrentSign('Processing text...');
+    setGloss([]);
+    setTranscript('');
 
     try {
       const res = await fetch('http://localhost:5000/process', {
@@ -57,15 +48,15 @@ export default function DemoPage({ onBack }: DemoPageProps) {
       const data = await res.json();
 
       if (data.error) {
-        setCurrentSign(data.error);
-       } else {
-        setCurrentSign(`ISL Gloss: ${data.isl_gloss.join(' ')}`);}
+        setTranscript(data.error);
+      } else {
+        setTranscript(data.original);
+        setGloss(data.isl_gloss || []);
+      }
 
-      // Update if backend sends dynamic path
-      setAvatarVideo('/avatar_output.mp4');
     } catch (err) {
       console.error(err);
-      setCurrentSign('Error processing request.');
+      setTranscript('Error processing request.');
     }
 
     setIsProcessing(false);
@@ -83,26 +74,30 @@ export default function DemoPage({ onBack }: DemoPageProps) {
       if (!file) return;
 
       setIsProcessing(true);
-      setProgressStep(0);
-      setAvatarVideo(null);
-      setCurrentSign(`Uploading ${file.name}`);
+      setGloss([]);
+      setTranscript('');
 
       const formData = new FormData();
       formData.append('video', file);
 
       try {
-        await fetch('http://localhost:5000/upload_video', {
+        const res = await fetch('http://localhost:5000/upload_video', {
           method: 'POST',
           body: formData
         });
 
-        await simulatePipeline();
+        const data = await res.json();
 
-        setCurrentSign('Video processed successfully.');
-        setAvatarVideo('/avatar_output.mp4');
+        if (data.error) {
+          setTranscript(data.error);
+        } else {
+          setTranscript(data.transcript);
+          setGloss(data.isl_gloss || []);
+        }
+
       } catch (err) {
         console.error(err);
-        setCurrentSign('Video upload failed.');
+        setTranscript('Video upload failed.');
       }
 
       setIsProcessing(false);
@@ -114,7 +109,7 @@ export default function DemoPage({ onBack }: DemoPageProps) {
   /* ---------------- VOICE INPUT ---------------- */
   const toggleRecording = () => {
     if (!SpeechRecognition) {
-      alert('Speech recognition not supported in this browser.');
+      alert('Speech recognition not supported.');
       return;
     }
 
@@ -123,32 +118,17 @@ export default function DemoPage({ onBack }: DemoPageProps) {
     recognition.interimResults = false;
 
     setIsRecording(true);
-    setCurrentSign('Listening...');
     recognition.start();
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setMessage(transcript);
-      setCurrentSign(`Recognized: "${transcript}"`);
+      const text = event.results[0][0].transcript;
+      setMessage(text);
       setIsRecording(false);
     };
 
-    recognition.onerror = () => {
-      setCurrentSign('Speech recognition failed.');
-      setIsRecording(false);
-    };
-
+    recognition.onerror = () => setIsRecording(false);
     recognition.onend = () => setIsRecording(false);
   };
-
-  /* ---------------- CIRCULAR PROGRESS CALCULATION ---------------- */
-  const percentage = (progressStep / 4) * 100;
-  const radius = 80;
-  const stroke = 12;
-  const normalizedRadius = radius - stroke * 2;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset =
-    circumference - (percentage / 100) * circumference;
 
   return (
     <div className="flex min-h-screen bg-slate-900 text-white">
@@ -160,7 +140,6 @@ export default function DemoPage({ onBack }: DemoPageProps) {
             <BookOpen className="text-blue-400" />
             <span className="text-xl font-bold">signifyEd</span>
           </div>
-
           <div className="text-sm text-slate-400">
             AI-Based ISL Translation System
           </div>
@@ -175,117 +154,101 @@ export default function DemoPage({ onBack }: DemoPageProps) {
         </button>
       </aside>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 p-10 space-y-10">
+      {/* MAIN SPLIT LAYOUT */}
+      <main className="flex-1 p-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
 
-        {/* AVATAR VIDEO PANEL */}
-        <div className="bg-slate-800 rounded-2xl p-6 flex flex-col items-center shadow-xl">
-          {avatarVideo ? (
-            <video
-              src={avatarVideo}
-              controls
-              autoPlay
-              className="w-96 rounded-xl"
-            />
-          ) : (
-            <div className="w-96 h-64 bg-slate-700 rounded-xl flex items-center justify-center text-slate-400">
-              Avatar Output Preview
+          {/* LEFT SIDE */}
+          <div className="space-y-8">
+
+            {/* Transcript Panel */}
+            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-semibold mb-4 text-blue-400">
+                Transcript
+              </h3>
+              <div className="bg-slate-700 p-4 rounded-lg min-h-[80px]">
+                {transcript || "Waiting for input..."}
+              </div>
             </div>
-          )}
 
-          <div className="mt-4 text-sm text-slate-300 text-center">
-            {currentSign}
-          </div>
-        </div>
+            {/* ISL Gloss Panel */}
+            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-semibold mb-4 text-blue-400">
+                ISL Gloss
+              </h3>
+              <div className="flex flex-wrap gap-4">
+                {gloss.length > 0 ? (
+                  gloss.map((word, index) => (
+                    <span
+                      key={index}
+                      className="bg-blue-600 px-6 py-3 rounded-xl text-lg font-semibold"
+                    >
+                      {word}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-slate-400">
+                    Gloss will appear here...
+                  </span>
+                )}
+              </div>
+            </div>
 
-        {/* CIRCULAR PROGRESS RING */}
-        {isProcessing && (
-          <div className="bg-slate-800 p-10 rounded-2xl flex flex-col items-center shadow-xl">
-            <svg height={radius * 2} width={radius * 2}>
-              <circle
-                stroke="#1e293b"
-                fill="transparent"
-                strokeWidth={stroke}
-                r={normalizedRadius}
-                cx={radius}
-                cy={radius}
-              />
-
-              <circle
-                stroke="#3b82f6"
-                fill="transparent"
-                strokeWidth={stroke}
-                strokeLinecap="round"
-                style={{
-                  strokeDasharray: circumference,
-                  strokeDashoffset,
-                  transition: 'stroke-dashoffset 0.5s ease'
-                }}
-                r={normalizedRadius}
-                cx={radius}
-                cy={radius}
-                transform={`rotate(-90 ${radius} ${radius})`}
-              />
-
-              <text
-                x="50%"
-                y="50%"
-                textAnchor="middle"
-                dy=".3em"
-                fill="white"
-                fontSize="22"
-                fontWeight="bold"
+            {/* Input Controls */}
+            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl space-y-5">
+              <button
+                onClick={handleVideoUpload}
+                disabled={isProcessing}
+                className="w-full bg-blue-600 py-3 rounded-xl hover:bg-blue-500 disabled:opacity-50 transition"
               >
-                {Math.round(percentage)}%
-              </text>
-            </svg>
+                <Upload className="inline mr-2" />
+                Upload Video
+              </button>
 
-            <div className="mt-6 text-slate-400 text-sm">
-              AI Processing Pipeline
+              <div className="flex space-x-3">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Type text to convert to ISL..."
+                  disabled={isProcessing}
+                  className="flex-1 px-4 py-3 rounded-xl bg-slate-700 focus:outline-none"
+                />
+
+                <button
+                  onClick={toggleRecording}
+                  disabled={isProcessing}
+                  className={`px-4 rounded-xl ${
+                    isRecording ? 'bg-red-500' : 'bg-slate-700'
+                  }`}
+                >
+                  <Mic />
+                </button>
+
+                <button
+                  onClick={handleSendMessage}
+                  disabled={isProcessing || !message.trim()}
+                  className="bg-green-600 px-4 rounded-xl disabled:opacity-50"
+                >
+                  <Send />
+                </button>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* INPUT SECTION */}
-        <div className="bg-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+          {/* RIGHT SIDE - Avatar Placeholder */}
+          <div className="bg-slate-800 p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center">
+            <h3 className="text-lg font-semibold mb-6 text-blue-400">
+              Avatar Rendering
+            </h3>
 
-          <button
-            onClick={handleVideoUpload}
-            disabled={isProcessing}
-            className="w-full bg-blue-600 py-3 rounded-xl hover:bg-blue-500 disabled:opacity-50 transition"
-          >
-            <Upload className="inline mr-2" />
-            Upload Video
-          </button>
-
-          <div className="flex space-x-3">
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type text to convert to ISL..."
-              disabled={isProcessing}
-              className="flex-1 px-4 py-3 rounded-xl bg-slate-700 focus:outline-none"
-            />
-
-            <button
-              onClick={toggleRecording}
-              disabled={isProcessing}
-              className={`px-4 rounded-xl ${
-                isRecording ? 'bg-red-500' : 'bg-slate-700'
-              }`}
-            >
-              <Mic />
-            </button>
-
-            <button
-              onClick={handleSendMessage}
-              disabled={isProcessing || !message.trim()}
-              className="bg-green-600 px-4 rounded-xl disabled:opacity-50"
-            >
-              <Send />
-            </button>
+            <div className="w-full h-[350px] bg-slate-700 rounded-xl flex items-center justify-center text-slate-400 text-center px-6">
+              🎬 Avatar Rendering Coming Soon
+              <br />
+              (3D ISL Animation Integration)
+            </div>
           </div>
+
         </div>
       </main>
     </div>

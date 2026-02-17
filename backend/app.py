@@ -15,7 +15,6 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 print("FLASK RUNNING FROM:", BASE_DIR)
 
 # ------------------ NLTK DOWNLOADS ------------------
@@ -107,6 +106,46 @@ def reorder_for_isl(lemmatized_tokens, pos_tags):
     return time_words + obj_words + verb_words + negation
 
 
+# ------------------ CENTRAL NLP PIPELINE ------------------
+
+def process_text_pipeline(input_text):
+    """
+    Unified NLP processing pipeline.
+    Used for:
+    - Direct text input
+    - Audio input
+    - Video-derived transcript
+    """
+
+    input_text = input_text.lower()
+
+    tokens = nltk.word_tokenize(input_text)
+
+    filtered_tokens = [
+        w for w in tokens if w.isalpha() and w not in stop_words
+    ]
+
+    pos_tags = nltk.pos_tag(filtered_tokens)
+
+    lemmatized_tokens = [
+        lemmatizer.lemmatize(word, get_wordnet_pos(tag))
+        for word, tag in pos_tags
+    ]
+
+    isl_ordered_tokens = reorder_for_isl(lemmatized_tokens, pos_tags)
+
+    isl_gloss = [
+        isl_mapping.get(token.lower(), token.upper())
+        for token in isl_ordered_tokens
+    ]
+
+    return {
+        "original": input_text,
+        "processed_tokens": lemmatized_tokens,
+        "isl_gloss": isl_gloss
+    }
+
+
 # ------------------ ROUTES ------------------
 
 @app.route("/")
@@ -120,38 +159,15 @@ def home():
 def process_text():
     try:
         data = request.get_json(force=True)
-        input_text = data.get("text", "").lower()
+        input_text = data.get("text", "")
 
         if not input_text.strip():
             return jsonify({"error": "Empty input text"}), 400
 
-        tokens = nltk.word_tokenize(input_text)
+        result = process_text_pipeline(input_text)
+        save_to_dataset(input_text, result["isl_gloss"])
 
-        filtered_tokens = [
-            w for w in tokens if w.isalpha() and w not in stop_words
-        ]
-
-        pos_tags = nltk.pos_tag(filtered_tokens)
-
-        lemmatized_tokens = [
-            lemmatizer.lemmatize(word, get_wordnet_pos(tag))
-            for word, tag in pos_tags
-        ]
-
-        isl_ordered_tokens = reorder_for_isl(lemmatized_tokens, pos_tags)
-
-        isl_gloss = [
-            isl_mapping.get(token.lower(), token.upper())
-            for token in isl_ordered_tokens
-        ]
-
-        save_to_dataset(input_text, isl_gloss)
-
-        return jsonify({
-            "original": input_text,
-            "processed_tokens": lemmatized_tokens,
-            "isl_gloss": isl_gloss
-        })
+        return jsonify(result)
 
     except Exception as e:
         traceback.print_exc()
@@ -201,34 +217,15 @@ def upload_video():
                 "error": "Speech recognition failed."
             }), 400
 
-        transcript = transcript.lower()
         print("Transcript:", transcript)
 
-        # -------- NLP PIPELINE --------
-        tokens = nltk.word_tokenize(transcript)
-
-        filtered_tokens = [
-            w for w in tokens if w.isalpha() and w not in stop_words
-        ]
-
-        pos_tags = nltk.pos_tag(filtered_tokens)
-
-        lemmatized_tokens = [
-            lemmatizer.lemmatize(word, get_wordnet_pos(tag))
-            for word, tag in pos_tags
-        ]
-
-        isl_ordered_tokens = reorder_for_isl(lemmatized_tokens, pos_tags)
-
-        isl_gloss = [
-            isl_mapping.get(token.lower(), token.upper())
-            for token in isl_ordered_tokens
-        ]
+        # -------- UNIFIED NLP PIPELINE --------
+        result = process_text_pipeline(transcript)
 
         return jsonify({
             "transcript": transcript,
-            "processed_tokens": lemmatized_tokens,
-            "isl_gloss": isl_gloss
+            "processed_tokens": result["processed_tokens"],
+            "isl_gloss": result["isl_gloss"]
         })
 
     except Exception as e:
