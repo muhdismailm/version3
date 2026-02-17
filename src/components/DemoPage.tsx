@@ -1,49 +1,117 @@
 import React, { useState } from 'react';
-import { Home, Upload, Mic, Send, BookOpen } from 'lucide-react';
+import {
+  Home,
+  Upload,
+  Mic,
+  Send,
+  BookOpen
+} from 'lucide-react';
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
 
 interface DemoPageProps {
   onBack: () => void;
 }
 
-// @ts-ignore for TypeScript safety (in case SpeechRecognition is not in TS DOM types)
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export default function DemoPage({ onBack }: DemoPageProps) {
   const [message, setMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentSign, setCurrentSign] = useState('Hello! I can translate your input into sign language.');
+  const [progressStep, setProgressStep] = useState(0);
+  const [currentSign, setCurrentSign] = useState('System Ready.');
+  const [avatarVideo, setAvatarVideo] = useState<string | null>(null);
 
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      setIsProcessing(true);
-      setCurrentSign(`Translating: "${message}"`);
-      setTimeout(() => {
-        setCurrentSign(`Showing sign language for: "${message}"`);
-        setIsProcessing(false);
-        setMessage('');
-      }, 2000);
+  /* ---------------- PIPELINE SIMULATION ---------------- */
+  const simulatePipeline = async () => {
+    const steps = 4;
+    for (let i = 1; i <= steps; i++) {
+      setProgressStep(i);
+      await new Promise((resolve) => setTimeout(resolve, 900));
     }
   };
 
+  /* ---------------- TEXT TO ISL ---------------- */
+  const handleSendMessage = async () => {
+    if (!message.trim()) return;
+
+    setIsProcessing(true);
+    setProgressStep(0);
+    setAvatarVideo(null);
+    setCurrentSign('Processing text...');
+
+    try {
+      const res = await fetch('http://localhost:5000/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: message })
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        setCurrentSign(data.error);
+       } else {
+        setCurrentSign(`ISL Gloss: ${data.isl_gloss.join(' ')}`);}
+
+      // Update if backend sends dynamic path
+      setAvatarVideo('/avatar_output.mp4');
+    } catch (err) {
+      console.error(err);
+      setCurrentSign('Error processing request.');
+    }
+
+    setIsProcessing(false);
+    setMessage('');
+  };
+
+  /* ---------------- VIDEO UPLOAD ---------------- */
   const handleVideoUpload = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'video/*';
-    input.onchange = (e) => {
+
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        setIsProcessing(true);
-        setCurrentSign(`Processing video: ${file.name}`);
-        setTimeout(() => {
-          setCurrentSign(`Translating sign language from video: ${file.name}`);
-          setIsProcessing(false);
-        }, 3000);
+      if (!file) return;
+
+      setIsProcessing(true);
+      setProgressStep(0);
+      setAvatarVideo(null);
+      setCurrentSign(`Uploading ${file.name}`);
+
+      const formData = new FormData();
+      formData.append('video', file);
+
+      try {
+        await fetch('http://localhost:5000/upload_video', {
+          method: 'POST',
+          body: formData
+        });
+
+        await simulatePipeline();
+
+        setCurrentSign('Video processed successfully.');
+        setAvatarVideo('/avatar_output.mp4');
+      } catch (err) {
+        console.error(err);
+        setCurrentSign('Video upload failed.');
       }
+
+      setIsProcessing(false);
     };
+
     input.click();
   };
 
+  /* ---------------- VOICE INPUT ---------------- */
   const toggleRecording = () => {
     if (!SpeechRecognition) {
       alert('Speech recognition not supported in this browser.');
@@ -51,152 +119,175 @@ export default function DemoPage({ onBack }: DemoPageProps) {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
     recognition.lang = 'en-US';
+    recognition.interimResults = false;
 
     setIsRecording(true);
-    setCurrentSign('Listening to your voice...');
+    setCurrentSign('Listening...');
     recognition.start();
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setMessage(transcript);
-      setCurrentSign(`Input: "${transcript}"`);
+      setCurrentSign(`Recognized: "${transcript}"`);
       setIsRecording(false);
     };
 
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error', event);
-      setCurrentSign('Could not recognize speech.');
+    recognition.onerror = () => {
+      setCurrentSign('Speech recognition failed.');
       setIsRecording(false);
     };
 
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
+    recognition.onend = () => setIsRecording(false);
   };
 
+  /* ---------------- CIRCULAR PROGRESS CALCULATION ---------------- */
+  const percentage = (progressStep / 4) * 100;
+  const radius = 80;
+  const stroke = 12;
+  const normalizedRadius = radius - stroke * 2;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset =
+    circumference - (percentage / 100) * circumference;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900">
-      {/* Navigation */}
-      <nav className="relative z-10 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-blue-900" />
-            </div>
-            <span className="text-white text-xl font-bold">signifyEd</span>
+    <div className="flex min-h-screen bg-slate-900 text-white">
+
+      {/* SIDEBAR */}
+      <aside className="w-64 bg-slate-800 p-6 flex flex-col justify-between">
+        <div>
+          <div className="flex items-center space-x-2 mb-10">
+            <BookOpen className="text-blue-400" />
+            <span className="text-xl font-bold">signifyEd</span>
           </div>
-          <div className="hidden md:flex items-center space-x-8">
-            <button onClick={onBack} className="flex items-center space-x-2 text-blue-100 hover:text-white">
-              <Home className="w-4 h-4" />
-              <span>Home</span>
-            </button>
-            <a href="#features" className="text-blue-100 hover:text-white">Features</a>
-            <a href="#about" className="text-blue-100 hover:text-white">About</a>
-            <a href="#contact" className="text-blue-100 hover:text-white">Contact</a>
-            <button className="bg-white text-blue-900 px-6 py-2 rounded-lg font-semibold hover:bg-blue-50">Demo</button>
+
+          <div className="text-sm text-slate-400">
+            AI-Based ISL Translation System
           </div>
-          <button onClick={onBack} className="md:hidden flex items-center text-white">
-            <Home className="w-5 h-5" />
-            <span>Home</span>
-          </button>
         </div>
-      </nav>
 
-      <div className="flex flex-col h-[calc(100vh-80px)]">
-        {/* Avatar Display */}
-        <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
-          <div className="mb-8">
-            <div className={`w-48 h-48 bg-gradient-to-br from-blue-300 to-blue-500 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 ${
-              isProcessing ? 'animate-pulse scale-105' : ''
-            }`}>
-              <div className="w-40 h-40 bg-white rounded-full flex items-center justify-center relative overflow-hidden">
-                <div className="text-6xl">{isProcessing ? '🤔' : '🤟'}</div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className={`transition-all duration-1000 ${isProcessing ? 'opacity-100' : 'opacity-0'}`}>
-                    <div className="flex space-x-4 text-2xl">
-                      <span className="animate-bounce">👋</span>
-                      <span className="animate-bounce delay-100">🤲</span>
-                      <span className="animate-bounce delay-200">👐</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="text-center mt-6">
-              <h3 className="text-white text-xl font-semibold mb-2">Sign Language Avatar</h3>
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 max-w-md">
-                <p className="text-blue-100 text-sm leading-relaxed">
-                  {currentSign}
-                </p>
-              </div>
-            </div>
-          </div>
+        <button
+          onClick={onBack}
+          className="flex items-center space-x-2 bg-slate-700 px-4 py-2 rounded-lg hover:bg-slate-600 transition"
+        >
+          <Home size={18} />
+          <span>Back</span>
+        </button>
+      </aside>
 
-          {isProcessing && (
-            <div className="mb-6">
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl px-6 py-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-3 h-3 bg-blue-300 rounded-full animate-pulse"></div>
-                  <span className="text-white text-sm font-medium">Processing your input...</span>
-                </div>
-              </div>
+      {/* MAIN CONTENT */}
+      <main className="flex-1 p-10 space-y-10">
+
+        {/* AVATAR VIDEO PANEL */}
+        <div className="bg-slate-800 rounded-2xl p-6 flex flex-col items-center shadow-xl">
+          {avatarVideo ? (
+            <video
+              src={avatarVideo}
+              controls
+              autoPlay
+              className="w-96 rounded-xl"
+            />
+          ) : (
+            <div className="w-96 h-64 bg-slate-700 rounded-xl flex items-center justify-center text-slate-400">
+              Avatar Output Preview
             </div>
           )}
-        </div>
 
-        {/* Input Area */}
-        <div className="px-6 pb-6">
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-4 text-center">
-              <button 
-                onClick={handleVideoUpload}
-                disabled={isProcessing}
-                className="bg-white/20 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/30 flex items-center justify-center space-x-3 mx-auto disabled:opacity-50"
-              >
-                <Upload className="w-5 h-5" />
-                <span>Upload Sign Language Video</span>
-              </button>
-            </div>
-
-            <div className="bg-white/10 rounded-2xl p-4">
-              <div className="flex items-center space-x-4">
-                <input
-                  type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !isProcessing && handleSendMessage()}
-                  placeholder="Type text to convert to sign language..."
-                  disabled={isProcessing}
-                  className="flex-1 bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white placeholder-blue-200 disabled:opacity-50"
-                />
-                <button
-                  onClick={toggleRecording}
-                  disabled={isProcessing}
-                  className={`p-3 rounded-xl ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-white/20 hover:bg-white/30'} disabled:opacity-50`}
-                >
-                  <Mic className={`w-5 h-5 ${isRecording ? 'text-white' : 'text-blue-200'}`} />
-                </button>
-                <button
-                  onClick={handleSendMessage}
-                  disabled={isProcessing || !message.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 p-3 rounded-xl disabled:opacity-50"
-                >
-                  <Send className="w-5 h-5 text-white" />
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 text-center">
-              <p className="text-blue-200 text-sm">
-                Upload a sign language video, type text, or use voice input to see the avatar translate to sign language.
-              </p>
-            </div>
+          <div className="mt-4 text-sm text-slate-300 text-center">
+            {currentSign}
           </div>
         </div>
-      </div>
+
+        {/* CIRCULAR PROGRESS RING */}
+        {isProcessing && (
+          <div className="bg-slate-800 p-10 rounded-2xl flex flex-col items-center shadow-xl">
+            <svg height={radius * 2} width={radius * 2}>
+              <circle
+                stroke="#1e293b"
+                fill="transparent"
+                strokeWidth={stroke}
+                r={normalizedRadius}
+                cx={radius}
+                cy={radius}
+              />
+
+              <circle
+                stroke="#3b82f6"
+                fill="transparent"
+                strokeWidth={stroke}
+                strokeLinecap="round"
+                style={{
+                  strokeDasharray: circumference,
+                  strokeDashoffset,
+                  transition: 'stroke-dashoffset 0.5s ease'
+                }}
+                r={normalizedRadius}
+                cx={radius}
+                cy={radius}
+                transform={`rotate(-90 ${radius} ${radius})`}
+              />
+
+              <text
+                x="50%"
+                y="50%"
+                textAnchor="middle"
+                dy=".3em"
+                fill="white"
+                fontSize="22"
+                fontWeight="bold"
+              >
+                {Math.round(percentage)}%
+              </text>
+            </svg>
+
+            <div className="mt-6 text-slate-400 text-sm">
+              AI Processing Pipeline
+            </div>
+          </div>
+        )}
+
+        {/* INPUT SECTION */}
+        <div className="bg-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+
+          <button
+            onClick={handleVideoUpload}
+            disabled={isProcessing}
+            className="w-full bg-blue-600 py-3 rounded-xl hover:bg-blue-500 disabled:opacity-50 transition"
+          >
+            <Upload className="inline mr-2" />
+            Upload Video
+          </button>
+
+          <div className="flex space-x-3">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Type text to convert to ISL..."
+              disabled={isProcessing}
+              className="flex-1 px-4 py-3 rounded-xl bg-slate-700 focus:outline-none"
+            />
+
+            <button
+              onClick={toggleRecording}
+              disabled={isProcessing}
+              className={`px-4 rounded-xl ${
+                isRecording ? 'bg-red-500' : 'bg-slate-700'
+              }`}
+            >
+              <Mic />
+            </button>
+
+            <button
+              onClick={handleSendMessage}
+              disabled={isProcessing || !message.trim()}
+              className="bg-green-600 px-4 rounded-xl disabled:opacity-50"
+            >
+              <Send />
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
