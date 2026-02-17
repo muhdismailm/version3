@@ -1,48 +1,66 @@
 import subprocess
 import os
 
+# Base directory of backend
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 AUDIO_FOLDER = os.path.join(UPLOAD_FOLDER, "audio")
 
 
 def has_audio(video_path):
     """
     Returns True if video contains an audio stream.
-    Uses FFmpeg to probe audio stream.
+    Uses ffprobe for reliable detection.
     """
     try:
-        command = ["ffmpeg", "-i", video_path]
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0",
+            video_path
+        ]
 
         result = subprocess.run(
             command,
-            stderr=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            text=True
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
         )
 
-        return "Audio:" in result.stderr
+        return bool(result.stdout.strip())
 
+    except subprocess.CalledProcessError:
+        return False
     except Exception as e:
-        print("Audio check error:", e)
+        print("Audio detection error:", e)
         return False
 
 
 def extract_audio(video_path):
     """
-    Extracts audio from video and saves as WAV (16kHz mono)
+    Extracts audio from video and saves as 16kHz mono WAV
     inside uploads/audio folder.
+    Returns absolute path of extracted audio.
     """
+
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video not found: {video_path}")
 
     if not has_audio(video_path):
         raise ValueError("No audio stream found in video.")
 
-    # Ensure uploads/audio folder exists
     os.makedirs(AUDIO_FOLDER, exist_ok=True)
 
-    # Generate output filename from video name
     base_name = os.path.splitext(os.path.basename(video_path))[0]
     output_audio_path = os.path.join(AUDIO_FOLDER, base_name + ".wav")
+
+    # If already extracted, reuse it
+    if os.path.exists(output_audio_path):
+        return os.path.abspath(output_audio_path)
 
     try:
         command = [
@@ -56,15 +74,17 @@ def extract_audio(video_path):
             output_audio_path
         ]
 
-        subprocess.run(command, check=True)
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
 
         if not os.path.exists(output_audio_path):
             raise RuntimeError("Audio extraction failed.")
 
-        print("Audio saved at:", os.path.abspath(output_audio_path))
-
-        return output_audio_path  # Return path for further processing
+        return os.path.abspath(output_audio_path)
 
     except subprocess.CalledProcessError as e:
-        print("FFmpeg extraction error:", e)
-        raise
+        raise RuntimeError(f"FFmpeg extraction failed: {e}")

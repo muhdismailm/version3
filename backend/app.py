@@ -14,7 +14,9 @@ import traceback
 app = Flask(__name__)
 CORS(app)
 
-print("FLASK RUNNING FROM:", os.getcwd())
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+print("FLASK RUNNING FROM:", BASE_DIR)
 
 # ------------------ NLTK DOWNLOADS ------------------
 
@@ -25,7 +27,7 @@ nltk.download("averaged_perceptron_tagger")
 
 # ------------------ UPLOAD CONFIG ------------------
 
-UPLOAD_FOLDER = "uploads/videos"
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads", "videos")
 ALLOWED_EXTENSIONS = {"mp4", "avi", "mov", "mkv"}
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
@@ -51,7 +53,7 @@ isl_mapping = {
     "you": "YOU"
 }
 
-DATASET_FILE = "isl_dataset.csv"
+DATASET_FILE = os.path.join(BASE_DIR, "isl_dataset.csv")
 
 # ------------------ HELPERS ------------------
 
@@ -82,8 +84,11 @@ def get_wordnet_pos(tag):
         return NOUN
 
 
-# ISL Grammar: Time → Object → Verb (+ Negation at end)
 def reorder_for_isl(lemmatized_tokens, pos_tags):
+    """
+    ISL Grammar Rule:
+    Time → Object → Verb (+ Negation at end)
+    """
     time_words, obj_words, verb_words = [], [], []
 
     for i, (word, tag) in enumerate(pos_tags):
@@ -117,6 +122,9 @@ def process_text():
         data = request.get_json(force=True)
         input_text = data.get("text", "").lower()
 
+        if not input_text.strip():
+            return jsonify({"error": "Empty input text"}), 400
+
         tokens = nltk.word_tokenize(input_text)
 
         filtered_tokens = [
@@ -141,7 +149,7 @@ def process_text():
 
         return jsonify({
             "original": input_text,
-            "processed": lemmatized_tokens,
+            "processed_tokens": lemmatized_tokens,
             "isl_gloss": isl_gloss
         })
 
@@ -150,7 +158,7 @@ def process_text():
         return jsonify({"error": str(e)}), 500
 
 
-# -------- VIDEO UPLOAD + OPTIONAL NLP --------
+# -------- VIDEO → AUDIO → TEXT → ISL --------
 
 @app.route("/upload_video", methods=["POST"])
 def upload_video():
@@ -172,25 +180,31 @@ def upload_video():
         file.save(video_path)
         print("Video saved:", video_path)
 
-        # -------- STEP 1: CHECK AUDIO --------
+        # -------- AUDIO EXTRACTION --------
         from video_utils import has_audio, extract_audio
 
         if not has_audio(video_path):
             return jsonify({
-                "error": "Uploaded video does not contain audio. Please upload a video with audio."
+                "error": "Uploaded video does not contain audio."
             }), 400
 
-        # -------- STEP 2: EXTRACT AUDIO --------
-        audio_path = os.path.splitext(video_path)[0] + ".wav"
-        extract_audio(video_path, audio_path)
+        audio_path = extract_audio(video_path)
+        print("Audio extracted:", audio_path)
 
-        # -------- STEP 3: SPEECH TO TEXT --------
+        # -------- SPEECH RECOGNITION --------
         from asr_utils import audio_to_text
 
-        transcript = audio_to_text(audio_path).lower()
+        transcript = audio_to_text(audio_path)
+
+        if not transcript or not transcript.strip():
+            return jsonify({
+                "error": "Speech recognition failed."
+            }), 400
+
+        transcript = transcript.lower()
         print("Transcript:", transcript)
 
-        # -------- STEP 4: NLP PIPELINE --------
+        # -------- NLP PIPELINE --------
         tokens = nltk.word_tokenize(transcript)
 
         filtered_tokens = [
@@ -213,12 +227,14 @@ def upload_video():
 
         return jsonify({
             "transcript": transcript,
+            "processed_tokens": lemmatized_tokens,
             "isl_gloss": isl_gloss
         })
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 # -------- TOKEN → GLOSS --------
 
