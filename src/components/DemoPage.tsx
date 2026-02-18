@@ -4,7 +4,8 @@ import {
   Upload,
   Mic,
   Send,
-  BookOpen
+  BookOpen,
+  Menu
 } from 'lucide-react';
 
 declare global {
@@ -23,14 +24,15 @@ const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export default function DemoPage({ onBack }: DemoPageProps) {
+
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-
   const [transcript, setTranscript] = useState('');
   const [gloss, setGloss] = useState<string[]>([]);
 
-  /* ---------------- TEXT TO ISL ---------------- */
+  /* TEXT TO ISL */
   const handleSendMessage = async () => {
     if (!message.trim()) return;
 
@@ -54,8 +56,7 @@ export default function DemoPage({ onBack }: DemoPageProps) {
         setGloss(data.isl_gloss || []);
       }
 
-    } catch (err) {
-      console.error(err);
+    } catch {
       setTranscript('Error processing request.');
     }
 
@@ -63,7 +64,7 @@ export default function DemoPage({ onBack }: DemoPageProps) {
     setMessage('');
   };
 
-  /* ---------------- VIDEO UPLOAD ---------------- */
+  /* VIDEO UPLOAD */
   const handleVideoUpload = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -95,8 +96,7 @@ export default function DemoPage({ onBack }: DemoPageProps) {
           setGloss(data.isl_gloss || []);
         }
 
-      } catch (err) {
-        console.error(err);
+      } catch {
         setTranscript('Video upload failed.');
       }
 
@@ -106,7 +106,7 @@ export default function DemoPage({ onBack }: DemoPageProps) {
     input.click();
   };
 
-  /* ---------------- VOICE INPUT ---------------- */
+  /* VOICE INPUT */
   const toggleRecording = () => {
     if (!SpeechRecognition) {
       alert('Speech recognition not supported.');
@@ -115,7 +115,6 @@ export default function DemoPage({ onBack }: DemoPageProps) {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.interimResults = false;
 
     setIsRecording(true);
     recognition.start();
@@ -131,119 +130,133 @@ export default function DemoPage({ onBack }: DemoPageProps) {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-900 text-white">
+    <div className="h-screen w-screen flex overflow-hidden bg-gradient-to-br from-indigo-900 via-slate-900 to-blue-900 text-white">
 
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-slate-800 p-6 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center space-x-2 mb-10">
-            <BookOpen className="text-blue-400" />
+      {/* DRAWER */}
+      <div
+        className={`fixed inset-y-0 left-0 w-64 bg-slate-900/95 backdrop-blur-lg border-r border-slate-700 p-6 transform ${
+          isDrawerOpen ? 'translate-x-0' : '-translate-x-full'
+        } transition-transform duration-300 z-50`}
+      >
+        <div className="flex justify-between items-center mb-10">
+          <div className="flex items-center space-x-2">
+            <BookOpen className="text-indigo-400" />
             <span className="text-xl font-bold">signifyEd</span>
           </div>
-          <div className="text-sm text-slate-400">
-            AI-Based ISL Translation System
-          </div>
+          <button onClick={() => setIsDrawerOpen(false)}>✕</button>
         </div>
 
         <button
           onClick={onBack}
-          className="flex items-center space-x-2 bg-slate-700 px-4 py-2 rounded-lg hover:bg-slate-600 transition"
+          className="flex items-center space-x-2 bg-indigo-600 px-4 py-2 rounded-lg hover:bg-indigo-500 transition w-full"
         >
           <Home size={18} />
           <span>Back</span>
         </button>
-      </aside>
+      </div>
 
-      {/* MAIN SPLIT LAYOUT */}
-      <main className="flex-1 p-10">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      {/* MAIN */}
+      <main className="flex-1 flex flex-col">
 
-          {/* LEFT SIDE */}
-          <div className="space-y-8">
+        {/* TOP BAR */}
+        <div className="h-14 flex items-center px-6 bg-slate-900/40 border-b border-slate-700">
+          <button onClick={() => setIsDrawerOpen(true)} className="mr-4">
+            <Menu size={20} />
+          </button>
+          <span className="text-indigo-400 font-semibold">
+            ISL Translation Demo
+          </span>
+        </div>
 
-            {/* Transcript Panel */}
-            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl">
-              <h3 className="text-lg font-semibold mb-4 text-blue-400">
-                Transcript
-              </h3>
-              <div className="bg-slate-700 p-4 rounded-lg min-h-[80px]">
-                {transcript || "Waiting for input..."}
+        {/* CONTENT */}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 overflow-hidden">
+
+          {/* LEFT PANEL */}
+          <div className="flex flex-col bg-slate-900/60 border border-slate-700 rounded-2xl p-5">
+
+            {/* SCROLLABLE CONTENT */}
+            <div className="flex-1 overflow-y-auto space-y-6">
+
+              {/* Transcript */}
+              <div>
+                <h3 className="text-indigo-400 font-semibold mb-2">Transcript</h3>
+                <div className="bg-slate-800 p-3 rounded-lg h-32 overflow-y-auto text-sm">
+                  {transcript || "Waiting for input..."}
+                </div>
               </div>
-            </div>
 
-            {/* ISL Gloss Panel */}
-            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl">
-              <h3 className="text-lg font-semibold mb-4 text-blue-400">
-                ISL Gloss
-              </h3>
-              <div className="flex flex-wrap gap-4">
-                {gloss.length > 0 ? (
-                  gloss.map((word, index) => (
-                    <span
-                      key={index}
-                      className="bg-blue-600 px-6 py-3 rounded-xl text-lg font-semibold"
-                    >
-                      {word}
+              {/* Gloss */}
+              <div>
+                <h3 className="text-indigo-400 font-semibold mb-2">ISL Gloss</h3>
+                <div className="bg-slate-800 p-3 rounded-lg h-40 overflow-y-auto flex flex-wrap gap-2">
+                  {gloss.length > 0 ? (
+                    gloss.map((word, index) => (
+                      <span
+                        key={index}
+                        className="bg-indigo-600 px-2 py-1 rounded text-xs"
+                      >
+                        {word}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-400 text-sm">
+                      Gloss will appear here...
                     </span>
-                  ))
-                ) : (
-                  <span className="text-slate-400">
-                    Gloss will appear here...
-                  </span>
-                )}
+                  )}
+                </div>
               </div>
+
             </div>
 
-            {/* Input Controls */}
-            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl space-y-5">
+            {/* FIXED INPUT SECTION */}
+            <div className="pt-4 border-t border-slate-700 space-y-3">
+
               <button
                 onClick={handleVideoUpload}
                 disabled={isProcessing}
-                className="w-full bg-blue-600 py-3 rounded-xl hover:bg-blue-500 disabled:opacity-50 transition"
+                className="w-full bg-indigo-600 py-2 rounded-lg hover:bg-indigo-500 transition"
               >
-                <Upload className="inline mr-2" />
+                <Upload className="inline mr-2" size={18} />
                 Upload Video
               </button>
 
-              <div className="flex space-x-3">
+              <div className="flex space-x-2">
+
                 <input
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Type text to convert to ISL..."
                   disabled={isProcessing}
-                  className="flex-1 px-4 py-3 rounded-xl bg-slate-700 focus:outline-none"
+                  className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-sm"
                 />
 
                 <button
                   onClick={toggleRecording}
-                  disabled={isProcessing}
-                  className={`px-4 rounded-xl ${
-                    isRecording ? 'bg-red-500' : 'bg-slate-700'
+                  className={`px-3 rounded-lg ${
+                    isRecording ? 'bg-red-500' : 'bg-slate-800 border border-slate-600'
                   }`}
                 >
-                  <Mic />
+                  <Mic size={18} />
                 </button>
 
                 <button
                   onClick={handleSendMessage}
-                  disabled={isProcessing || !message.trim()}
-                  className="bg-green-600 px-4 rounded-xl disabled:opacity-50"
+                  disabled={!message.trim()}
+                  className="bg-green-600 px-3 rounded-lg"
                 >
-                  <Send />
+                  <Send size={18} />
                 </button>
+
               </div>
             </div>
+
           </div>
 
-          {/* RIGHT SIDE - Avatar Placeholder */}
-          <div className="bg-slate-800 p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center">
-            <h3 className="text-lg font-semibold mb-6 text-blue-400">
-              Avatar Rendering
-            </h3>
-
-            <div className="w-full h-[350px] bg-slate-700 rounded-xl flex items-center justify-center text-slate-400 text-center px-6">
-              🎬 Avatar Rendering Coming Soon
+          {/* RIGHT PANEL */}
+          <div className="bg-slate-900/60 border border-slate-700 rounded-2xl p-6 flex items-center justify-center">
+            <div className="text-center text-slate-400">
+              🎬 Avatar Rendering Module
               <br />
               (3D ISL Animation Integration)
             </div>
