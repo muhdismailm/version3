@@ -5,9 +5,11 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus.reader.wordnet import NOUN, VERB, ADJ, ADV
+from seq2seq.inference import generate_gloss
 import csv
 import os
 import traceback
+
 
 # ------------------ INIT ------------------
 
@@ -17,12 +19,14 @@ CORS(app)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 print("FLASK RUNNING FROM:", BASE_DIR)
 
+
 # ------------------ NLTK DOWNLOADS ------------------
 
 nltk.download("stopwords")
 nltk.download("wordnet")
 nltk.download("punkt")
 nltk.download("averaged_perceptron_tagger")
+
 
 # ------------------ UPLOAD CONFIG ------------------
 
@@ -32,6 +36,7 @@ ALLOWED_EXTENSIONS = {"mp4", "avi", "mov", "mkv"}
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
 # ------------------ NLP SETUP ------------------
 
 lemmatizer = WordNetLemmatizer()
@@ -39,6 +44,7 @@ stop_words = set(stopwords.words("english"))
 
 important_words = {"i", "me", "my", "not", "no", "never", "can", "will"}
 stop_words = stop_words - important_words
+
 
 # ------------------ ISL MAPPING ------------------
 
@@ -53,6 +59,7 @@ isl_mapping = {
 }
 
 DATASET_FILE = os.path.join(BASE_DIR, "isl_dataset.csv")
+
 
 # ------------------ HELPERS ------------------
 
@@ -106,19 +113,11 @@ def reorder_for_isl(lemmatized_tokens, pos_tags):
     return time_words + obj_words + verb_words + negation
 
 
-# ------------------ CENTRAL NLP PIPELINE ------------------
+# ------------------ RULE-BASED NLP PIPELINE ------------------
 
 def process_text_pipeline(input_text):
-    """
-    Unified NLP processing pipeline.
-    Used for:
-    - Direct text input
-    - Audio input
-    - Video-derived transcript
-    """
 
     input_text = input_text.lower()
-
     tokens = nltk.word_tokenize(input_text)
 
     filtered_tokens = [
@@ -153,10 +152,31 @@ def home():
     return "SignifyEd Backend Running Successfully"
 
 
-# -------- TEXT → ISL --------
+# -------- RULE-BASED TEXT → ISL --------
 
-@app.route("/process", methods=["POST"])
-def process_text():
+# @app.route("/process", methods=["POST"])
+# def process_text():
+#     try:
+#         data = request.get_json(force=True)
+#         input_text = data.get("text", "")
+
+#         if not input_text.strip():
+#             return jsonify({"error": "Empty input text"}), 400
+
+#         result = process_text_pipeline(input_text)
+#         save_to_dataset(input_text, result["isl_gloss"])
+
+#         return jsonify(result)
+
+#     except Exception as e:
+#         traceback.print_exc()
+#         return jsonify({"error": str(e)}), 500
+
+
+# -------- SEQ2SEQ TEXT → ISL --------
+
+@app.route("/seq2seq_process", methods=["POST"])
+def seq2seq_process():
     try:
         data = request.get_json(force=True)
         input_text = data.get("text", "")
@@ -164,10 +184,13 @@ def process_text():
         if not input_text.strip():
             return jsonify({"error": "Empty input text"}), 400
 
-        result = process_text_pipeline(input_text)
-        save_to_dataset(input_text, result["isl_gloss"])
+        gloss = generate_gloss(input_text)
 
-        return jsonify(result)
+        return jsonify({
+            "original": input_text,
+            "isl_gloss": gloss,
+            "model": "seq2seq_lstm"
+        })
 
     except Exception as e:
         traceback.print_exc()
@@ -192,40 +215,28 @@ def upload_video():
 
         filename = secure_filename(file.filename)
         video_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-
         file.save(video_path)
-        print("Video saved:", video_path)
 
-        # -------- AUDIO EXTRACTION --------
         from video_utils import has_audio, extract_audio
 
         if not has_audio(video_path):
-            return jsonify({
-                "error": "Uploaded video does not contain audio."
-            }), 400
+            return jsonify({"error": "Uploaded video does not contain audio."}), 400
 
         audio_path = extract_audio(video_path)
-        print("Audio extracted:", audio_path)
 
-        # -------- SPEECH RECOGNITION --------
         from asr_utils import audio_to_text
-
         transcript = audio_to_text(audio_path)
 
-        if not transcript or not transcript.strip():
-            return jsonify({
-                "error": "Speech recognition failed."
-            }), 400
+        if not transcript.strip():
+            return jsonify({"error": "Speech recognition failed."}), 400
 
-        print("Transcript:", transcript)
-
-        # -------- UNIFIED NLP PIPELINE --------
         result = process_text_pipeline(transcript)
 
         return jsonify({
             "transcript": transcript,
             "processed_tokens": result["processed_tokens"],
-            "isl_gloss": result["isl_gloss"]
+            "isl_gloss": result["isl_gloss"],
+            "model": "rule_based"
         })
 
     except Exception as e:
